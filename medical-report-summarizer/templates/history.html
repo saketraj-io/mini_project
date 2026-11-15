@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}History{% endblock %}
+
+{% block content %}
+<section class="page-header page-header-row">
+  <div>
+    <span class="eyebrow-badge">Report Archive</span>
+    <h1>History</h1>
+    <p class="lead">Review previously summarized medical reports, abnormal lab counts, and compression metrics.</p>
+  </div>
+  {% if items %}
+  <a href="{{ url_for('index') }}" class="btn btn-primary">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    <span>New summary</span>
+  </a>
+  {% endif %}
+</section>
+
+{% if items %}
+<div class="history-toolbar">
+  <div class="history-count">
+    Showing <strong id="visibleCount">{{ items|length }}</strong> of <strong>{{ items|length }}</strong> saved report{{ 's' if items|length != 1 else '' }}
+  </div>
+  <div class="search-box">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="search" id="historySearch" placeholder="Filter by report title or method..." aria-label="Filter history">
+  </div>
+</div>
+
+<div class="card table-card">
+  <div class="table-responsive">
+    <table class="data-table" id="historyTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Report</th>
+          <th>Date</th>
+          <th>Method</th>
+          <th>Abnormal values</th>
+          <th>Shorter by</th>
+          <th class="text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in items %}
+        <tr class="history-row" data-search="{{ (i.title ~ ' ' ~ i.method)|lower }}">
+          <td class="mono muted">#{{ i.id }}</td>
+          <td class="report-title-cell">
+            <a href="{{ url_for('report', report_id=i.id) }}" class="report-link">{{ i.title }}</a>
+          </td>
+          <td class="mono date-cell">{{ i.created_at }}</td>
+          <td>
+            <span class="method-pill method-{{ i.method|lower }}">{{ i.method|capitalize }}</span>
+          </td>
+          <td>
+            {% if i.abnormal|int > 0 %}
+              <span class="status-pill status-high">{{ i.abnormal }} flagged</span>
+            {% else %}
+              <span class="status-pill status-normal">{{ i.abnormal }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="compression-pill mono">{{ i.compression }}%</span>
+          </td>
+          <td class="text-right">
+            <a href="{{ url_for('report', report_id=i.id) }}" class="table-action-link">Open &rarr;</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty-state">
+  <div class="empty-icon" aria-hidden="true">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+  </div>
+  <h2>No reports summarized yet</h2>
+  <p class="muted">Upload a discharge summary, lab test, or scan report to see your saved history here.</p>
+  <a href="{{ url_for('index') }}" class="btn btn-primary">Summarize your first report</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if items %}
+<script>
+  const searchInput = document.getElementById('historySearch');
+  const rows = document.querySelectorAll('.history-row');
+  const visibleCount = document.getElementById('visibleCount');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      const q = this.value.trim().toLowerCase();
+      let shown = 0;
+      rows.forEach((row) => {
+        const match = !q || row.dataset.search.includes(q);
+        row.style.display = match ? '' : 'none';
+        if (match) shown++;
+      });
+      visibleCount.textContent = shown;
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}

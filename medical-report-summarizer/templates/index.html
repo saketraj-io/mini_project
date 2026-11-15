@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Summarize{% endblock %}
+
+{% block content %}
+<section class="hero page-header">
+  <span class="eyebrow-badge">Clinical NLP &amp; Lab Intelligence</span>
+  <h1>Summarize a medical report</h1>
+  <p class="lead">Upload a discharge summary, lab report, or scan. MedSum extracts key findings, flags out-of-range vitals, and generates both a clinical brief for doctors and a plain-language guide for patients.</p>
+  <div class="hero-pills">
+    <span class="hero-pill">PDF &amp; Scanned OCR</span>
+    <span class="hero-pill">Auto Lab Range Check</span>
+    <span class="hero-pill">Hallucination Guardrail</span>
+  </div>
+</section>
+
+<form class="card form" method="post" action="{{ url_for('summarize') }}" enctype="multipart/form-data" id="form">
+  <div class="grid-2">
+    <!-- Left Column: File Dropzone & Sample Reports -->
+    <div class="input-panel">
+      <div class="label-row">
+        <label class="label" for="file">Upload a report</label>
+        <button type="button" class="link-btn" id="clear-file" hidden>Remove file</button>
+      </div>
+
+      <label class="dropzone" id="dropzone" for="file">
+        <input type="file" name="file" id="file" accept="{{ allowed }}">
+        <div class="dropzone-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <strong id="file-name">Choose a file or drag it here</strong>
+        <span id="file-meta" class="dropzone-sub">Text, PDF, or scanned image ({{ allowed }})</span>
+      </label>
+
+      <div class="sample-section">
+        <label class="label" for="samples">Or try a sample clinical report</label>
+        <div class="samples" id="samples">
+          {% for name, title in samples %}
+            <button type="button" class="chip" data-name="{{ name }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span>{{ title }}</span>
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Textarea Input -->
+    <div class="input-panel">
+      <div class="label-row">
+        <label class="label" for="text">Or paste the report text</label>
+        <button type="button" class="link-btn" id="clear-text" hidden>Clear text</button>
+      </div>
+      <div class="textarea-wrap">
+        <textarea name="text" id="text" rows="12" placeholder="Paste discharge summary, blood test values, or radiology notes here..."></textarea>
+        <div class="textarea-footer">
+          <span id="text-stats" class="mono muted">0 words &middot; 0 chars</span>
+          <span class="muted">Supports clinical abbreviations</span>
+        </div>
+      </div>
+      <input type="hidden" name="title" id="title">
+    </div>
+  </div>
+
+  <hr class="form-divider">
+
+  <!-- Configuration Options -->
+  <div class="options">
+    <fieldset class="method-fieldset">
+      <legend class="label">Summarization method</legend>
+      <div class="method-cards">
+        <label class="radio method-card">
+          <input type="radio" name="method" value="extractive" checked>
+          <div class="method-card-body">
+            <div class="method-card-top">
+              <strong>Extractive</strong>
+              <span class="method-badge badge-fast">Fastest</span>
+            </div>
+            <p>TextRank selects the highest-scoring sentences directly from the original report.</p>
+          </div>
+        </label>
+
+        <label class="radio method-card">
+          <input type="radio" name="method" value="hybrid">
+          <div class="method-card-body">
+            <div class="method-card-top">
+              <strong>Hybrid</strong>
+              <span class="method-badge badge-rec">Recommended</span>
+            </div>
+            <p>TextRank filters key clinical facts first, then the BART transformer rewrites them cleanly.</p>
+          </div>
+        </label>
+
+        <label class="radio method-card">
+          <input type="radio" name="method" value="abstractive">
+          <div class="method-card-body">
+            <div class="method-card-top">
+              <strong>Abstractive</strong>
+              <span class="method-badge badge-deep">Deep Rewrite</span>
+            </div>
+            <p>BART reads the entire document end-to-end and generates a fresh, condensed summary.</p>
+          </div>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="tuning-panel">
+      <div class="slider-box">
+        <div class="label-row">
+          <label class="label" for="ratio">Summary length</label>
+          <span class="ratio-badge mono" id="ratio-out">30%</span>
+        </div>
+        <input type="range" name="ratio" id="ratio" min="0.15" max="0.6" step="0.05" value="0.3">
+        <div class="slider-ticks mono muted">
+          <span>15% (Concise)</span>
+          <span>30%</span>
+          <span>60% (Detailed)</span>
+        </div>
+      </div>
+
+      <label class="check ner-toggle-card">
+        <input type="checkbox" name="ner_model" id="ner_model">
+        <div class="ner-toggle-text">
+          <strong>Enable BERT biomedical NER</strong>
+          <span>Uses <code>d4data/biomedical-ner-all</code> for deeper entity detection (takes slightly longer on first run).</span>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Submit & Live Processing Feedback -->
+  <div class="submit-row">
+    <button class="btn btn-primary btn-lg" type="submit" id="submit">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      </svg>
+      <span id="submit-label">Summarize report</span>
+    </button>
+  </div>
+
+  <div class="hint processing-card" id="wait" hidden role="status" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="processing-text">
+      <strong>Running MedSum NLP pipeline&hellip;</strong>
+      <span id="wait-stage">Extracting clinical text, flagging lab values, and generating summaries. The first transformer run loads the model and may take up to a minute.</span>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fileInput = document.getElementById('file');
+  const dropzone = document.getElementById('dropzone');
+  const fileName = document.getElementById('file-name');
+  const fileMeta = document.getElementById('file-meta');
+  const clearFileBtn = document.getElementById('clear-file');
+  const textArea = document.getElementById('text');
+  const clearTextBtn = document.getElementById('clear-text');
+  const textStats = document.getElementById('text-stats');
+  const titleInput = document.getElementById('title');
+  const ratioInput = document.getElementById('ratio');
+  const ratioOut = document.getElementById('ratio-out');
+  const defaultSubText = fileMeta.textContent;
+
+  function formatBytes(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function updateFileUI() {
+    if (fileInput.files && fileInput.files.length > 0) {
+      const f = fileInput.files[0];
+      fileName.textContent = f.name;
+      fileMeta.textContent = formatBytes(f.size) + ' · Ready to summarize';
+      dropzone.classList.add('has-file');
+      clearFileBtn.hidden = false;
+      document.querySelectorAll('#samples .chip').forEach(b => b.classList.remove('selected'));
+    } else {
+      fileName.textContent = 'Choose a file or drag it here';
+      fileMeta.textContent = defaultSubText;
+      dropzone.classList.remove('has-file');
+      clearFileBtn.hidden = true;
+    }
+  }
+
+  function updateTextStats() {
+    const val = textArea.value.trim();
+    const chars = textArea.value.length;
+    const words = val ? val.split(/\s+/).length : 0;
+    textStats.textContent = `${words} word${words === 1 ? '' : 's'} · ${chars} char${chars === 1 ? '' : 's'}`;
+    clearTextBtn.hidden = chars === 0;
+  }
+
+  fileInput.addEventListener('change', updateFileUI);
+
+  clearFileBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInput.value = '';
+    updateFileUI();
+  });
+
+  // Drag-and-drop highlight & file assignment
+  ['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+      fileInput.files = e.dataTransfer.files;
+      updateFileUI();
+    }
+  });
+
+  textArea.addEventListener('input', () => {
+    updateTextStats();
+    if (!textArea.value.trim()) {
+      titleInput.value = '';
+      document.querySelectorAll('#samples .chip').forEach(b => b.classList.remove('selected'));
+    }
+  });
+
+  clearTextBtn.addEventListener('click', () => {
+    textArea.value = '';
+    titleInput.value = '';
+    document.querySelectorAll('#samples .chip').forEach(b => b.classList.remove('selected'));
+    updateTextStats();
+  });
+
+  ratioInput.addEventListener('input', () => {
+    ratioOut.textContent = Math.round(ratioInput.value * 100) + '%';
+  });
+
+  document.querySelectorAll('#samples .chip').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.classList.add('loading');
+      try {
+        const res = await fetch('/sample/' + encodeURIComponent(btn.dataset.name));
+        const data = await res.json();
+        textArea.value = data.text;
+        titleInput.value = data.title;
+        fileInput.value = '';
+        updateFileUI();
+        updateTextStats();
+        document.querySelectorAll('#samples .chip').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      } finally {
+        btn.classList.remove('loading');
+      }
+    });
+  });
+
+  document.getElementById('form').addEventListener('submit', () => {
+    const submitBtn = document.getElementById('submit');
+    const submitLabel = document.getElementById('submit-label');
+    submitBtn.disabled = true;
+    submitLabel.textContent = 'Summarizing...';
+    document.getElementById('wait').hidden = false;
+  });
+</script>
+{% endblock %}

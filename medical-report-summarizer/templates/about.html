@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}How it works{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <span class="eyebrow-badge">Architecture &amp; NLP Pipeline</span>
+  <h1>How MedSum works</h1>
+  <p class="lead">Every uploaded medical report passes through an eight-stage hybrid NLP pipeline designed for clinical accuracy, fact verification, and patient readability.</p>
+</section>
+
+<ol class="pipeline pipeline-grid">
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 01 · Input</span>
+    </div>
+    <strong>Upload</strong>
+    <span>Accepts digital text files, multi-page PDFs, or scanned photos of hospital reports.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 02 · OCR</span>
+    </div>
+    <strong>Text extraction</strong>
+    <span><code>PyMuPDF</code> parses native PDFs, while <code>Tesseract OCR</code> extracts text from scanned images after grayscale, contrast, and threshold clean-up.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 03 · Cleaning</span>
+    </div>
+    <strong>Pre-processing</strong>
+    <span>Strips page headers and numbering noise, expands clinical abbreviations (e.g., <code>HTN</code> &rarr; <em>hypertension</em>), detects report sections, and segments sentences.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 04 · Extraction</span>
+    </div>
+    <strong>Medical NER &amp; lab parsing</strong>
+    <span>A clinical lexicon with negation detection—plus an optional biomedical BERT model (<code>d4data/biomedical-ner-all</code>)—tags diseases, symptoms, drugs, and procedures while benchmarking lab values against reference ranges.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 05 · Generation</span>
+    </div>
+    <strong>Summarization</strong>
+    <span><strong>Extractive:</strong> TextRank (TF-IDF + cosine similarity + PageRank) with medical boosts. <strong>Abstractive:</strong> BART transformer (<code>{{ model.split('/')[-1] }}</code>). <strong>Hybrid:</strong> TextRank filters key sentences and BART rewrites them.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 06 · Guardrail</span>
+    </div>
+    <strong>Fact check</strong>
+    <span>Cross-verifies every numerical lab value and medical term in the summary against the source document to catch hallucinations and measure key-fact coverage.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 07 · Clinical View</span>
+    </div>
+    <strong>Doctor summary</strong>
+    <span>Generates a concise clinical overview with out-of-range vitals and abnormal lab biomarkers highlighted for rapid review.</span>
+  </li>
+
+  <li class="pipeline-step">
+    <div class="step-meta">
+      <span class="step-tag">Stage 08 · Plain Language</span>
+    </div>
+    <strong>Patient summary</strong>
+    <span>Translates medical jargon into everyday language using a curated glossary, adds context for abnormal results, and scores clarity with the Flesch Reading Ease metric.</span>
+  </li>
+</ol>
+
+<div class="tech-grid">
+  <div class="card tech-card">
+    <div class="card-header-row">
+      <h2>TextRank scoring</h2>
+      <span class="pill-subtle">Graph Ranking</span>
+    </div>
+    <div class="formula-box">
+      <p class="formula">WS(V<sub>i</sub>) = (1 &minus; d) + d &middot; &Sigma;<sub>j</sub> [ w<sub>ji</sub> / &Sigma;<sub>k</sub> w<sub>jk</sub> ] &middot; WS(V<sub>j</sub>)</p>
+    </div>
+    <p>Here, <code>d = 0.85</code> is the damping factor and <code>w</code> represents cosine similarity between sentence TF-IDF vectors. Each sentence score is further weighted by section importance (<em>Diagnosis</em> and <em>Impression</em> rank highest), medical entity density, and abnormal-lab boosts.</p>
+  </div>
+
+  <div class="card tech-card">
+    <div class="card-header-row">
+      <h2>Benchmark evaluation</h2>
+      <span class="pill-subtle">ROUGE Metrics</span>
+    </div>
+    <p>Run the automated evaluation suite from your terminal to compare Extractive, Hybrid, and Abstractive outputs against ground-truth summaries in <code>data/references.json</code>:</p>
+    <pre class="code-snippet"><code>python scripts/evaluate.py</code></pre>
+    <div class="metric-tags">
+      <span class="metric-chip">ROUGE-1</span>
+      <span class="metric-chip">ROUGE-2</span>
+      <span class="metric-chip">ROUGE-L</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
